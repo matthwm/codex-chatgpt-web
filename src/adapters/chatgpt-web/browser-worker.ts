@@ -22,6 +22,7 @@ import {
 } from "../../config";
 import { estimateTokens } from "../../lib/token-estimate";
 import { CHATGPT_STOPPED_THINKING_LABELS } from "./ui-labels";
+import { CHATGPT_SIZE_ALERT_PATTERNS } from "./size-alert";
 import type { CodexProviderConfig } from "../../types";
 import { parseDataUrl } from "../image";
 import {
@@ -937,14 +938,16 @@ export class ChatGptSubmissionRejectionObserver {
   async captureAlertBaseline(): Promise<void> {
     if (!this.page) throw new Error("Cannot capture submission alerts before observing its page");
     const generation = this.generation;
-    const baseline = await this.page.evaluateHandle(() => {
+    // The alert follows the UI language; keep the sentences in size-alert.ts, the only list to extend.
+    const baseline = await this.page.evaluateHandle(sources => {
+      const patterns = sources.map(source => new RegExp(source));
       const errors = (): HTMLElement[] => [...document.querySelectorAll<HTMLElement>('[role="alert"]')]
         .filter(element => !element.closest('.markdown, [data-turn-key], [data-turn-id-container], [data-message-author-role], [data-user-message-bubble], [contenteditable="true"]')
           && element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })
-          && /^The message you submitted was too long(?:, please edit it and resubmit)?\.$/.test(element.innerText.trim()));
+          && element.innerText.split(/\r?\n/).some(line => patterns.some(pattern => pattern.test(line.trim()))));
       const initial = new WeakSet(errors());
       return { hasNewSizeError: () => errors().some(element => !initial.has(element)) };
-    });
+    }, CHATGPT_SIZE_ALERT_PATTERNS.map(pattern => pattern.source));
     if (generation !== this.generation) { await baseline.dispose(); return; }
     this.alertBaseline = baseline;
   }

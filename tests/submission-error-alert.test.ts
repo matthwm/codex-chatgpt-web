@@ -21,6 +21,23 @@ test.skipIf(!process.env.CHATGPT_DOM_TEST_BROWSER)("a new service size alert sur
   } finally { observer.dispose(); await browser.close(); }
 }, 20_000);
 
+test.skipIf(!process.env.CHATGPT_DOM_TEST_BROWSER)("a new Portuguese size alert is classified like the English one", async () => {
+  const browser = await chromium.launch({ executablePath: process.env.CHATGPT_DOM_TEST_BROWSER, headless: true });
+  const observer = new ChatGptSubmissionRejectionObserver();
+  try {
+    const page = await browser.newPage();
+    await page.route("**/*", route => route.fulfill({ contentType: "text/html", body: "<main><div data-turn-key='current'>Resposta</div></main>" }));
+    await page.goto("https://chatgpt.com/c/fixture");
+    observer.begin(page);
+    await observer.captureAlertBaseline();
+    await page.evaluate(async () => { await fetch("/backend-api/f/conversation", { method: "POST" }); });
+    await page.evaluate(text => {
+      document.querySelector("main")!.innerHTML = `<aside role="alert">${text}</aside>`;
+    }, "A mensagem enviada era longa demais. Edite-a e reenvie.");
+    expect(await observer.failure()).toMatchObject({ code: "context_length_exceeded", retryable: false });
+  } finally { observer.dispose(); await browser.close(); }
+}, 20_000);
+
 test.skipIf(!process.env.CHATGPT_DOM_TEST_BROWSER)("size alerts require a current owned Send and exclude history, quoted text and hidden UI", async () => {
   const browser = await chromium.launch({ executablePath: process.env.CHATGPT_DOM_TEST_BROWSER, headless: true });
   const failures: unknown[] = [];
