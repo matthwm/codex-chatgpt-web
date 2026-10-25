@@ -942,7 +942,9 @@ export class ChatGptSubmissionRejectionObserver {
     const baseline = await this.page.evaluateHandle(sources => {
       const patterns = sources.map(source => new RegExp(source));
       const errors = (): HTMLElement[] => [...document.querySelectorAll<HTMLElement>('[role="alert"]')]
-        .filter(element => !element.closest('.markdown, [data-turn-key], [data-turn-id-container], [data-message-author-role], [data-user-message-bubble], [contenteditable="true"]')
+        // The service alert renders inside the last turn container, beside the rejected user message,
+        // so turn wrappers are not excluded; message content, quoted markdown and editors still are.
+        .filter(element => !element.closest('.markdown, [data-message-author-role], [data-user-message-bubble], [contenteditable="true"]')
           && element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })
           && element.innerText.split(/\r?\n/).some(line => patterns.some(pattern => pattern.test(line.trim()))));
       const initial = new WeakSet(errors());

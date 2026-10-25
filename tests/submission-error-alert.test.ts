@@ -38,6 +38,28 @@ test.skipIf(!process.env.CHATGPT_DOM_TEST_BROWSER)("a new Portuguese size alert 
   } finally { observer.dispose(); await browser.close(); }
 }, 20_000);
 
+test.skipIf(!process.env.CHATGPT_DOM_TEST_BROWSER)("a new size alert rendered inside the last turn container is classified", async () => {
+  const browser = await chromium.launch({ executablePath: process.env.CHATGPT_DOM_TEST_BROWSER, headless: true });
+  const observer = new ChatGptSubmissionRejectionObserver();
+  try {
+    const page = await browser.newPage();
+    await page.route("**/*", route => route.fulfill({
+      contentType: "text/html",
+      body: `<main><div data-turn-key="old-turn"><aside id="old" role="alert">${tooLong}</aside></div></main>`,
+    }));
+    await page.goto("https://chatgpt.com/c/fixture");
+    observer.begin(page);
+    await observer.captureAlertBaseline();
+    await page.evaluate(async () => { await fetch("/backend-api/f/conversation", { method: "POST" }); });
+    // The rejected Send leaves the service alert beside the user message, inside the turn wrapper.
+    await page.evaluate(text => document.querySelector("main")!.insertAdjacentHTML(
+      "beforeend",
+      `<div data-turn-key="last-turn" data-turn-id-container><aside role="alert">${text}</aside></div>`,
+    ), "A mensagem enviada era longa demais. Edite-a e reenvie.");
+    expect(await observer.failure()).toMatchObject({ code: "context_length_exceeded", retryable: false });
+  } finally { observer.dispose(); await browser.close(); }
+}, 20_000);
+
 test.skipIf(!process.env.CHATGPT_DOM_TEST_BROWSER)("size alerts require a current owned Send and exclude history, quoted text and hidden UI", async () => {
   const browser = await chromium.launch({ executablePath: process.env.CHATGPT_DOM_TEST_BROWSER, headless: true });
   const failures: unknown[] = [];
@@ -60,7 +82,6 @@ test.skipIf(!process.env.CHATGPT_DOM_TEST_BROWSER)("size alerts require a curren
     await page.evaluate(async () => { await fetch("/backend-api/f/conversation", { method: "POST" }); });
     for (const markup of [
       `<div class="markdown"><aside role="alert">${tooLong}</aside></div>`,
-      `<div data-turn-key="old-turn"><aside role="alert">${tooLong}</aside></div>`,
       `<div data-user-message-bubble><aside role="alert">${tooLong}</aside></div>`,
       `<div contenteditable="true"><aside role="alert">${tooLong}</aside></div>`,
       `<aside role="alert" hidden>${tooLong}</aside>`,
